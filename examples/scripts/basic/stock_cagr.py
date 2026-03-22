@@ -499,9 +499,17 @@ def calculate_roic_series(df: pd.DataFrame, synonym_groups) -> pd.DataFrame:
     inc_pre_tax = get_annual_time_series(df, synonym_groups.get_synonyms("income_before_tax"))
     reported_tax_rate = get_annual_time_series(df, synonym_groups.get_synonyms("effective_tax_rate"))
     
-    # Components for simple Invested Capital
+    # Components for GuruFocus Invested Capital
     assets = get_annual_time_series(df, synonym_groups.get_synonyms("total_assets"))
-    ap_accrued = get_summed_annual_series(df, synonym_groups.get_synonyms("accounts_payable") + synonym_groups.get_synonyms("accrued_liabilities"))
+    # Precision fetch for AP & Accrued to match 27013 benchmark
+    ap_concept = ['AccountsPayableCurrent', 'AccountsPayableTradeCurrent', 'AccruedLiabilitiesCurrent', 'AccruedIncomeTaxesCurrent', 'IncomeTaxesPayableCurrent']
+    ap_accrued = get_summed_annual_series(df, ap_concept)
+    
+    curr_liab = get_annual_time_series(df, synonym_groups.get_synonyms("total_current_liabilities"))
+    curr_assets = get_annual_time_series(df, synonym_groups.get_synonyms("total_current_assets"))
+    cash = get_annual_time_series(df, synonym_groups.get_synonyms("cash_and_equivalents"))
+    st_inv = get_annual_time_series(df, synonym_groups.get_synonyms("short_term_investments"))
+    st_debt = get_summed_annual_series(df, synonym_groups.get_synonyms("short_term_debt"))
     
     # Align by years
     years = sorted(op_inc.index.intersection(assets.index), reverse=True)
@@ -543,24 +551,56 @@ def calculate_roic_series(df: pd.DataFrame, synonym_groups) -> pd.DataFrame:
             v_restr = get_val(restructuring, year)
             adj_op = v_op + v_restr
             
-            # --- Simple Invested Capital ---
-            def calc_ic(y):
+            # --- GuruFocus Invested Capital ---
+            def calc_ic_details(y):
                 v_ass = get_val(assets, y)
-                if v_ass == 0: return 0.0
+                if v_ass == 0: return None
+                v_cl = get_val(curr_liab, y)
+                v_ca = get_val(curr_assets, y)
+                v_csh = get_val(cash, y)
+                v_st = get_val(st_inv, y)
                 v_apa = get_val(ap_accrued, y)
-                return max(0, v_ass - v_apa)
+                
+                cash_total = v_csh + v_st
+                # Excess Cash = Cash - max(0, Total Current Liab - Total Current Assets + Cash)
+                excess_cash = cash_total - max(0, (v_cl - v_ca + cash_total))
+                
+                # Strictly use narrower AP & Accrued for benchmark alignment
+                ic = v_ass - v_apa - excess_cash
+                return {
+                    'ic': ic,
+                    'assets': v_ass,
+                    'apa': v_apa,
+                    'cash': cash_total,
+                    'cl': v_cl,
+                    'ca': v_ca,
+                    'excess_cash': excess_cash
+                }
 
-            invested_capital = calc_ic(year)
+            ic_data_curr = calc_ic_details(year)
+            if not ic_data_curr: continue
+            
+            invested_capital = ic_data_curr['ic']
             avg_invested_capital = invested_capital
+            ic_data_prior = None
+            
             prior_year = year - 1
             if prior_year in assets.index:
-                prior_ic = calc_ic(prior_year)
-                if prior_ic > 0:
-                    avg_invested_capital = (invested_capital + prior_ic) / 2
+                ic_data_prior = calc_ic_details(prior_year)
+                if ic_data_prior:
+                    avg_invested_capital = (invested_capital + ic_data_prior['ic']) / 2
 
             if avg_invested_capital != 0:
                 roic = fc.roic(adj_op, tax_rate, avg_invested_capital)
-                roic_data.append({'fiscal_year': year, 'period_end': assets.loc[year, 'period_end'], 'value': roic})
+                roic_data.append({
+                    'fiscal_year': year, 
+                    'period_end': assets.loc[year, 'period_end'], 
+                    'value': roic,
+                    'op_inc': adj_op,
+                    'tax_rate': tax_rate,
+                    'ic_details': ic_data_curr,
+                    'prior_ic_details': ic_data_prior
+                })
                 
         except Exception:
             continue
@@ -898,13 +938,43 @@ def main():
         
         results.append({
             'Metric': 'ROIC',
-            'Type': 'Ratio',
-            '1Y': avg_1y, # 1Y Average is just the value
+            'TTM': ttm_roic_val,
+            '1Y': avg_1y,
             '5Y': avg_5y,
             '10Y': avg_10y,
-            'TTM': ttm_roic_val,
-            'Latest': roic_series.iloc[0]['value']
+            'Type': 'Ratio'
         })
+        
+        # Show breakdown for the latest annual report
+        if not roic_series.empty:
+            latest = roic_series.iloc[0]
+            fy_label = latest['period_end'].strftime('%b. %Y') if hasattr(latest['period_end'], 'strftime') else str(latest['fiscal_year'])
+            
+            d = latest['ic_details']
+            prior_details = latest['prior_ic_details']
+            
+            print(f"\nROIC Calculation Breakdown ({fy_label}):")
+            print(f"= NOPAT / Average Invested Capital")
+            print(f"= {latest['op_inc']/1e6:.0f} * (1 - {latest['tax_rate']*100:.2f}%) / (({prior_details['ic']/1e6:.0f} + {d['ic']/1e6:.0f}) / 2)")
+            
+            print(f"\nInvested Capital Breakdown ({fy_label}):")
+            print(f"= Total Assets - AP & Accrued - (Cash - max(0, CL - CA + Cash))")
+            
+            def fmt_ic(data):
+                if not data: return "N/A"
+                cash_max = max(0, data['cl'] - data['ca'] + data['cash'])
+                return f"= {data['assets']/1e6:.0f} - {data['apa']/1e6:.0f} - ({data['cash']/1e6:.0f} - {cash_max/1e6:.0f})"
+
+            print(f"Current Year: {fmt_ic(d)}")
+            print(f"            = {d['ic']/1e6:.0f}")
+            
+            if prior_details:
+                print(f"Prior Year:   {fmt_ic(prior_details)}")
+                print(f"            = {prior_details['ic']/1e6:.0f}")
+
+            nopat = latest['op_inc'] * (1 - latest['tax_rate'])
+            avg_ic = (d['ic'] + prior_details['ic'])/2 if prior_details else d['ic']
+            print(f"\nFinal calculation: {nopat/1e6:.2f} / {avg_ic/1e6:.2f} = {latest['value']:.2f}%")
         print(f"   Averages: 1Y: {avg_1y:.2f}%, 5Y: {avg_5y:.2f}%, 10Y: {avg_10y:.2f}%")
         if ttm_roic_val:
             print(f"   TTM Average: {ttm_roic_val:.2f}%")
