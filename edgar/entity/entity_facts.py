@@ -15,8 +15,7 @@ if TYPE_CHECKING:
     from edgar.entity.unit_handling import UnitResult
     from edgar.enums import PeriodType
 
-from typing import Union
-
+import gzip
 import httpx
 import orjson as json
 import pandas as pd
@@ -62,16 +61,46 @@ def download_company_facts_from_sec(cik: int) -> Dict[str, Any]:
 
 def load_company_facts_from_local(cik: int) -> Optional[Dict[str, Any]]:
     """
-    Load company facts from local data
+    Load company facts from local data.
+    
+    Checks standard local data directory first, then falls back to HTTP cache (_tcache).
     """
+    # 1. Try standard companyfacts directory (bulk data extraction)
     company_facts_dir = get_edgar_data_directory() / "companyfacts"
-    if not company_facts_dir.exists():
-        return None
-    company_facts_file = company_facts_dir / f"CIK{cik:010}.json"
-    if not company_facts_file.exists():
-        raise NoCompanyFactsFound(cik=cik)
+    if company_facts_dir.exists():
+        company_facts_file = company_facts_dir / f"CIK{cik:010}.json"
+        if company_facts_file.exists():
+            return json.loads(company_facts_file.read_text())
 
-    return json.loads(company_facts_file.read_text())
+    # 2. Try HTTP cache (_tcache) - mirroring data.sec.gov structure
+    # The cache stores files based on the URL path.
+    # Paths look like: ~/.edgar/_tcache/data.sec.gov/api-xbrl-companyfacts-CIKxxxxxxxxxx.json
+    tcache_dir = get_edgar_data_directory() / "_tcache"
+    if tcache_dir.exists():
+        # Construct path matching the URL structure
+        # URL: https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010}.json
+        # But based on user ls: data.sec.gov/api-xbrl-companyfacts-CIK{cik:010}.json
+        # Wait, the ls output showed: api-xbrl-companyfacts-CIK... 
+        # Let's try the pattern seen in the directory listing
+        tcache_file = tcache_dir / "data.sec.gov" / f"api-xbrl-companyfacts-CIK{cik:010}.json"
+        
+        if tcache_file.exists():
+            try:
+                content = tcache_file.read_bytes()
+                # Content might be gzipped (even if extension is .json)
+                try:
+                    decompressed = gzip.decompress(content)
+                    return json.loads(decompressed)
+                except (gzip.BadGzipFile, OSError):
+                    # Not gzipped, try parsing directly
+                    return json.loads(content)
+            except Exception as e:
+                log.warning(f"Failed to read from tcache for CIK {cik}: {e}")
+
+    # If we get here, we couldn't find the file in either location
+    # Only raise if we are strictly using local storage and expect it to be there?
+    # The original code raised NoCompanyFactsFound if file missing in check 1.
+    raise NoCompanyFactsFound(cik=cik)
 
 
 @lru_cache(maxsize=32)

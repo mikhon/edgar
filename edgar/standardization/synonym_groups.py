@@ -331,12 +331,31 @@ def _get_builtin_groups_cached() -> List[SynonymGroup]:
             category='income_statement'
         ),
         SynonymGroup(
+            name='restructuring_charges',
+            synonyms=[
+                'RestructuringCharges',
+                'RestructuringSettlementAndOtherCosts',
+                'RestructuringCosts',
+            ],
+            description='Restructuring and related charges',
+            category='income_statement'
+        ),
+        SynonymGroup(
             name='income_tax_expense',
             synonyms=[
                 'IncomeTaxExpenseBenefit',
                 'IncomeTaxesPaidNet',
             ],
             description='Income tax expense/benefit',
+            category='income_statement'
+        ),
+        SynonymGroup(
+            name='effective_tax_rate',
+            synonyms=[
+                'EffectiveIncomeTaxRateContinuingOperations',
+                'EffectiveIncomeTaxRateReconciliationAtFederalStatutoryIncomeTaxRate',
+            ],
+            description='Effective income tax rate reported by company',
             category='income_statement'
         ),
         SynonymGroup(
@@ -530,6 +549,11 @@ def _get_builtin_groups_cached() -> List[SynonymGroup]:
                 'AccruedLiabilitiesCurrent',
                 'OtherAccruedLiabilitiesCurrent',
                 'EmployeeRelatedLiabilitiesCurrent',
+                'AccruedSalaryAndWagesCurrent',
+                'DeferredRevenueCurrent',
+                'ContractLiabilityCurrent',
+                'IncomeTaxesPayableCurrent',
+                'AccruedIncomeTaxesCurrent'
             ],
             description='Accrued liabilities',
             category='balance_sheet'
