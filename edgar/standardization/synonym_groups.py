@@ -428,6 +428,7 @@ def _get_builtin_groups_cached() -> List[SynonymGroup]:
                 'ShortTermInvestments',
                 'MarketableSecuritiesCurrent',
                 'AvailableForSaleSecuritiesDebtSecuritiesCurrent',
+                'DebtSecuritiesAvailableForSaleExcludingAccruedInterestCurrent',
             ],
             description='Short-term investments and marketable securities',
             category='balance_sheet'

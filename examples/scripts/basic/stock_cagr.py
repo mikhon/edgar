@@ -502,7 +502,7 @@ def calculate_roic_series(df: pd.DataFrame, synonym_groups) -> pd.DataFrame:
     # Components for GuruFocus Invested Capital
     assets = get_annual_time_series(df, synonym_groups.get_synonyms("total_assets"))
     # Precision fetch for AP & Accrued to match 27013 benchmark
-    ap_concept = ['AccountsPayableCurrent', 'AccountsPayableTradeCurrent', 'AccruedLiabilitiesCurrent', 'AccruedIncomeTaxesCurrent', 'IncomeTaxesPayableCurrent']
+    ap_concept = ['AccountsPayableCurrent', 'AccountsPayableTradeCurrent', 'AccruedLiabilitiesCurrent', 'AccruedIncomeTaxesCurrent', 'IncomeTaxesPayableCurrent', 'OtherAccruedLiabilitiesCurrent']
     ap_accrued = get_summed_annual_series(df, ap_concept)
     
     curr_liab = get_annual_time_series(df, synonym_groups.get_synonyms("total_current_liabilities"))
