@@ -89,9 +89,12 @@ def calculate_roic(df: pl.DataFrame, current_year: int) -> Dict:
 
     def calc_roic_year(year: int) -> Optional[float]:
         op_inc = get_val("operating_income", year)
+        restr = get_val("restructuring_charges", year) or 0
         tax_exp = get_val("income_tax_expense", year)
         pre_tax = get_val("income_before_tax", year)
         reported_tax_rate = get_val("effective_tax_rate", year)
+        
+        adj_op = op_inc + restr if op_inc is not None else None
         
         # GuruFocus IC Components
         tot_assets = get_val("total_assets", year)
@@ -135,7 +138,7 @@ def calculate_roic(df: pl.DataFrame, current_year: int) -> Dict:
         ic_prior = calc_ic(year - 1)
         avg_ic = (invested_capital + ic_prior) / 2 if ic_prior is not None else invested_capital
 
-        return fc.roic(op_inc, tax_rate, avg_ic)
+        return fc.roic(adj_op, tax_rate, avg_ic)
 
     roics = []
     # Fetch ROIC for up to 11 years to ensure we can get 10Y results

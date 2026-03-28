@@ -114,6 +114,15 @@ def parse_company_facts_json(
                 units_data = concept_data.get("units", {})
                 for unit, values in units_data.items():
                     for value_record in values:
+                        end_date_str = value_record.get("end")
+                        fy = value_record.get("fy")
+                        # Fix fiscal year: SEC 'fy' equals the filing year, not the fact year.
+                        if end_date_str:
+                            try:
+                                fy = int(end_date_str[:4])
+                            except Exception:
+                                pass
+
                         record = {
                             "cik": cik,
                             "entity_name": entity_name,
@@ -122,12 +131,12 @@ def parse_company_facts_json(
                             "xbrl_tag": xbrl_tag,
                             "units": unit,
                             "val": value_record.get("val"),
-                            "fiscal_year": value_record.get("fy"),
+                            "fiscal_year": fy,
                             "fiscal_period": value_record.get("fp"),
                             "form": value_record.get("form"),
                             "filed_date": value_record.get("filed"),
                             "start_date": value_record.get("start"),
-                            "end_date": value_record.get("end"),
+                            "end_date": end_date_str,
                             "frame": value_record.get("frame"),
                         }
                         records.append(record)
@@ -163,16 +172,16 @@ def create_financial_table():
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS financial (
         cik INT,
-        ticker SYMBOL CAPACITY 8192 CACHE,
+        ticker SYMBOL CAPACITY 8192 CACHE INDEX,
         entity_name SYMBOL,
         taxonomy SYMBOL,
-        concept SYMBOL CAPACITY 128 CACHE,
-        xbrl_tag SYMBOL CAPACITY 512 CACHE,
+        concept SYMBOL CAPACITY 128 CACHE INDEX,
+        xbrl_tag SYMBOL CAPACITY 512 CACHE INDEX,
         units SYMBOL,
         val DOUBLE,
         fiscal_year INT,
-        fiscal_period SYMBOL CAPACITY 16 CACHE,
-        form SYMBOL CAPACITY 32 CACHE,
+        fiscal_period SYMBOL CAPACITY 16 CACHE INDEX,
+        form SYMBOL CAPACITY 32 CACHE INDEX,
         filed_date TIMESTAMP,
         start_date TIMESTAMP,
         frame SYMBOL,
